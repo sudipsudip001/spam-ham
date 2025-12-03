@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spam Detection for messages</title>
+    <script>
+        function sendToServer(event){ 
+            event.preventDefault(); 
+            
+            var text = document.getElementById('messageInput').value;
+            const data = {
+                message: text
+            };
+
+            fetch('http://127.0.0.1:8000/predict', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                // console.log('Server response: ', data);
+                document.getElementById('result').textContent = 'Prediction Result: ' + data;
+            })
+            .catch((error) => { 
+                console.error("Error:", error);
+                document.getElementById('result').textContent = 'Error sending request.';
+            });
+        }
+    </script>
+</head>
+<body>
+    <form onsubmit="sendToServer(event)"> 
+        <input type="text" id="messageInput" placeholder="Enter the text to check spam/ham.">
+        <input type="submit" value="Check for spam">
+    </form>
+    <p id="result"></p> 
+</body>
+</html>
