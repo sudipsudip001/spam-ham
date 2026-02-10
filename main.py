@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 import joblib
 from pydantic import BaseModel
 import nltk
@@ -7,13 +7,26 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 import re
 from bs4 import BeautifulSoup
-import pandas as pd
 from fastapi.middleware.cors import CORSMiddleware
+import logging
+from dotenv import load_dotenv
+import os
 
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.download('punkt_tab')
-eng_stopwords = stopwords.words('english')
+load_dotenv()
+MODEL_NAME = os.getenv("MODEL")
+VECTORIZER_NAME = os.getenv("VECTORIZER")
+ORIGIN = os.getenv("ORIGIN_NAME")
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# DOWNLOAD LOCALLY DURING BUILD PROCESS IN DOCKERFILE OR SETUP SCRIPT
+try:
+    # nltk.download(['punkt', 'punkt_tab'], quiet=True)
+    nltk.download('stopwords', quiet=True)
+    ENG_STOPWORDS = set(stopwords.words('english'))
+except Exception as e:
+    logger.error(f"NLTK stopwords Download failed: {e}")
 
 class Message(BaseModel):
     message: str
@@ -21,27 +34,26 @@ class Message(BaseModel):
 class text_preprocessing():
     def __init__(self):        
         self.stemmer = PorterStemmer()        
-        self.eng_stopwords = stopwords.words('english')
-        self.corpus = []
+        self.eng_stopwords = ENG_STOPWORDS
 
     def clean_text(self, string):
-        string = re.sub("http\S+", " ", string)
-        string = BeautifulSoup(string, 'lxml')
-        string = string.get_text()
-        string = re.sub('[^A-Za-z]+', ' ', string)
-        string = re.sub(r"n\'t", " not", string)
-        string = re.sub(r"\'re", " are", string)
-        string = re.sub(r"\'s", " is", string)
-        string = re.sub(r"\'d", " would", string)
-        string = re.sub(r"\'ll", " will", string)
-        string = re.sub(r"\'t", " not", string)
-        string = re.sub(r"\'ve", " have", string)
-        string = re.sub(r"\'m", " am", string)
-        return string
-    
-    def tokenize(self, string):
-        strings = word_tokenize(string)
-        return strings
+        try:
+            string = re.sub("http\S+", " ", string)
+            string = BeautifulSoup(string, 'html.parser')
+            string = string.get_text()
+            string = re.sub('[^A-Za-z]+', ' ', string)
+            string = re.sub(r"n\'t", " not", string)
+            string = re.sub(r"\'re", " are", string)
+            string = re.sub(r"\'s", " is", string)
+            string = re.sub(r"\'d", " would", string)
+            string = re.sub(r"\'ll", " will", string)
+            string = re.sub(r"\'t", " not", string)
+            string = re.sub(r"\'ve", " have", string)
+            string = re.sub(r"\'m", " am", string)
+            return string.lower()
+        except Exception as e:
+            logger.error(f"Cleaning error: {e}")
+            raise ValueError("Failed to clean text input.")
 
     def normalize_text(self, tokens):
         tokens = [token.lower() for token in tokens]
@@ -57,33 +69,42 @@ class text_preprocessing():
         return string
 
 app = FastAPI()
-model = joblib.load("multinomial.joblib")
-vectorize_model = joblib.load("vectorizer.joblib")
+
+try:
+    model = joblib.load(MODEL_NAME)
+    vectorize_model = joblib.load(VECTORIZER_NAME)
+except Exception as e:
+    logger.critical("Model files not found! Prediction will fail.")
+    model, vectorize_model = None, None
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,  # Allow cookies and authentication headers
-    allow_methods=["*"],     # Allow all HTTP methods (GET, POST, PUT, DELETE, etc.)
-    allow_headers=["*"],     # Allow all headers in the request
+    # allow_origins=["*"],
+    allow_origins=[f"{ORIGIN}"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+processor =  text_preprocessing()
 
 @app.post("/predict")
-def read_root(input_data: Message):
-    print("The message that you sent is: ", input_data.message)
-    message = input_data.message
-    
-    processor =  text_preprocessing()
-    preprocessed = processor.preprocess(message)
-    tokenized = processor.tokenize(preprocessed)
-    tokens = processor.normalize_text(tokenized)
-    tokens = [token for token in tokens if token not in eng_stopwords]
-    processed_text = " ".join(tokens)
+async def read_root(input_data: Message):
+    if not model or not vectorize_model:
+        raise HTTPException(status_code=503, detail="Model service unavailable")
 
-    vectorized = vectorize_model.transform([processed_text])
-    predicted_value = model.predict(vectorized)[0]
+    try:
+        preprocessed = processor.preprocess(input_data.message)
+        vectorized = vectorize_model.transform([preprocessed])
+        predicted_value = model.predict(vectorized)[0]
+        if predicted_value == 1:
+            return "Spam"
+        else:
+            return "Ham"
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        raise HTTPException(status_code=500, detail="An internal error occured during prediction.")
 
-    if predicted_value == 1:
-        return "Spam"
-    else:
-        return "Ham"
+@app.get("/health")
+def detail():
+    return {"status": "Healthy"}
