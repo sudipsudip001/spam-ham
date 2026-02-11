@@ -13,7 +13,9 @@
                 message: text
             };
 
-            fetch('http://127.0.0.1:8000/predict', {
+            const LAMBDA_URL = "https://wklebhwvqnkqgsxhcwqsll6eyu0vkbql.lambda-url.ap-southeast-2.on.aws/predict";
+
+            fetch(LAMBDA_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -22,11 +24,9 @@
             })
             .then(response => response.json())
             .then(data => {
-                // console.log('Server response: ', data);
                 document.getElementById('result').textContent = 'Prediction Result: ' + data;
             })
-            .catch((error) => { 
-                console.error("Error:", error);
+            .catch((error) => {
                 document.getElementById('result').textContent = 'Error sending request.';
             });
         }

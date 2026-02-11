@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException
 import joblib
 from pydantic import BaseModel
-import nltk
 from nltk.stem import PorterStemmer
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
@@ -11,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 from dotenv import load_dotenv
 import os
+from mangum import Mangum
 
 load_dotenv()
 MODEL_NAME = os.getenv("MODEL")
@@ -22,11 +22,9 @@ logger = logging.getLogger(__name__)
 
 # DOWNLOAD LOCALLY DURING BUILD PROCESS IN DOCKERFILE OR SETUP SCRIPT
 try:
-    # nltk.download(['punkt', 'punkt_tab'], quiet=True)
-    nltk.download('stopwords', quiet=True)
     ENG_STOPWORDS = set(stopwords.words('english'))
 except Exception as e:
-    logger.error(f"NLTK stopwords Download failed: {e}")
+    logger.error(f"NLTK stopwords load failed. Ensure NLTK_DATA is set: {e}")
 
 class Message(BaseModel):
     message: str
@@ -80,11 +78,11 @@ except Exception as e:
 app.add_middleware(
     CORSMiddleware,
     # allow_origins=["*"],
-    allow_origins=[f"{ORIGIN}"],
+    allow_origins=["https://staging.d3ok0uz900bq7g.amplifyapp.com"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-processor =  text_preprocessing()
+processor = text_preprocessing()
 
 @app.post("/predict")
 async def read_root(input_data: Message):
@@ -105,6 +103,8 @@ async def read_root(input_data: Message):
         logger.error(f"Prediction error: {e}")
         raise HTTPException(status_code=500, detail="An internal error occured during prediction.")
 
-@app.get("/health")
+@app.get("/")
 def detail():
-    return {"status": "Healthy"}
+    return {"detail": "Healthy"}
+
+handler = Mangum(app)

@@ -1,20 +1,21 @@
-FROM python:3.11-slim
+FROM public.ecr.aws/lambda/python:3.11
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+WORKDIR ${LAMBDA_TASK_ROOT}
 
-# This creates a folder named /app INSIDE the container
-WORKDIR /app
+RUN pip install --upgrade pip
 
-# Copy files from your local SPAM-HAM folder to the container's /app
-# Note: We use "." because we will run the build command from inside SPAM-HAM
-COPY uv.lock pyproject.toml ./
+# Copy requirements first (for caching)
+COPY requirements.txt .
 
-RUN uv sync --frozen --no-install-project --no-dev
+# Install dependencies using pip
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy everything else
+# Download required NLTK data
+RUN python -m nltk.downloader -d ${LAMBDA_TASK_ROOT}/nltk_data stopwords punkt
+
+# Copy app + models
 COPY . .
 
-EXPOSE 8000
+ENV NLTK_DATA=${LAMBDA_TASK_ROOT}/nltk_data
 
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["main.handler"]
