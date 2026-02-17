@@ -16,4 +16,4 @@ Things I want to try in the future:
 1. Add custom domains.
 1. Enable Firewall protection to my application.
 
-The link to the application can be found here: [Link](https://staging.d3ok0uz900bq7g.amplifyapp.com/)
+The link to the application can be found here: [Link](https://spamdetection.sudipshrestha.space/)
